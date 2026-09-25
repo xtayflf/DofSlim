@@ -1,4 +1,4 @@
-name: Build 32-bit SO for CentOS 7
+name: Build 32-bit SO
 
 on:
   push:
@@ -13,28 +13,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Build inside CentOS 7 container
-      run: |
-        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace centos:7 bash -c "
-          # 修复 CentOS 7 镜像源停用问题
-          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
 
-          # 安装 GCC 和 32 位 C 运行库/开发包
-          yum install -y gcc glibc-devel.i686 git curl
+    - name: Install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
 
-          # 安装标准的 64 位 Rust，并添加 32 位 i686 编译目标
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source \$HOME/.cargo/env
-          rustup target add i686-unknown-linux-gnu
-
-          # 编译 32 位版本
-          cargo build --release --target i686-unknown-linux-gnu
-        "
+    - name: Build 32-bit library via Cross
+      run: cross build --release --target i686-unknown-linux-gnu
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libdofslim-i686-centos7
+        name: libdofslim-i686
         path: target/i686-unknown-linux-gnu/release/libdofslim.so
