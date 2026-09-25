@@ -1,4 +1,4 @@
-name: Build 32-bit SO
+name: Build 32-bit SO for CentOS 7
 
 on:
   push:
@@ -8,26 +8,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: centos:7
 
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Install 32-bit dependencies
+    - name: Prepare CentOS 7 repos
       run: |
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+        sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
+        sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
+        sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
 
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: i686-unknown-linux-gnu
+    - name: Install build tools and 32-bit glibc
+      run: |
+        yum install -y gcc glibc-devel.i686 git curl
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-host i686-unknown-linux-gnu
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Build
-      run: cargo build --release --target i686-unknown-linux-gnu
+      run: |
+        source $HOME/.cargo/env
+        cargo build --release
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libdofslim-i686
-        path: target/i686-unknown-linux-gnu/release/libdofslim.so
+        name: libdofslim-i686-centos7
+        path: target/release/libdofslim.so
