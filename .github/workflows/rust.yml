@@ -1,4 +1,4 @@
-name: Build 32-bit SO
+name: Build 32-bit SO for CentOS 7
 
 on:
   push:
@@ -13,17 +13,32 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+    - name: Build inside CentOS 7
+      run: |
+        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace centos:7 bash -c "
+          # 修复 CentOS 7 镜像源停用问题
+          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
+          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
+          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
 
-    - name: Install cross
-      run: cargo install cross --git https://github.com/cross-rs/cross
+          # 安装 GCC、32 位 glibc 开发包及工具
+          yum install -y gcc glibc-devel.i686 git curl
 
-    - name: Build 32-bit library via Cross
-      run: cross build --release --target i686-unknown-linux-gnu
+          # 安装 64 位 Rust 并添加 i686 target
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source \$HOME/.cargo/env
+          rustup target add i686-unknown-linux-gnu
+
+          # 强制指定 32 位 C 编译器和链接器标志
+          export CC=\"gcc -m32\"
+          export CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=\"gcc\"
+
+          # 执行 32 位 release 编译
+          cargo build --release --target i686-unknown-linux-gnu
+        "
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: libdofslim-i686
+        name: libdofslim-i686-centos7
         path: target/i686-unknown-linux-gnu/release/libdofslim.so
