@@ -8,31 +8,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: centos:7
 
     steps:
-    - name: Prepare CentOS 7 repos
-      run: |
-        sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
-        sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
-        sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
-
-    - name: Install build tools and 32-bit glibc
-      run: |
-        yum install -y gcc glibc-devel.i686 git curl
-
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-host i686-unknown-linux-gnu
-
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Build
+    - name: Build inside CentOS 7 container
       run: |
-        source $HOME/.cargo/env
-        cargo build --release
+        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace centos:7 bash -c "
+          # 修复 CentOS 7 官方源已停用的问题
+          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
+          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
+          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
+
+          # 安装编译基础依赖及 32 位 glibc
+          yum install -y gcc glibc-devel.i686 git curl
+
+          # 安装 Rust (i686 架构)
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-host i686-unknown-linux-gnu
+          source \$HOME/.cargo/env
+
+          # 执行编译
+          cargo build --release
+        "
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
