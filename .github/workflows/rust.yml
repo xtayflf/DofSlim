@@ -13,32 +13,45 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Build inside CentOS 7
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build SO with Custom Dockerfile
       run: |
-        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace centos:7 bash -c "
-          # 修复 CentOS 7 镜像源停用问题
-          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
+        cat << 'EOF' > Dockerfile.build
+        FROM i386/centos:7
 
-          # 安装 GCC、32 位 glibc 开发包及工具
-          yum install -y gcc glibc-devel.i686 git curl
+        # 修复 CentOS 7 官方源
+        RUN sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo && \
+            sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo && \
+            sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
 
-          # 安装 64 位 Rust 并添加 i686 target
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source \$HOME/.cargo/env
-          rustup target add i686-unknown-linux-gnu
+        # 安装基础编译工具
+        RUN yum install -y gcc make git curl glibc-devel
 
-          # 强制指定 32 位 C 编译器和链接器标志
-          export CC=\"gcc -m32\"
-          export CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=\"gcc\"
+        # 安装 Rust
+        RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        ENV PATH="/root/.cargo/bin:${PATH}"
 
-          # 执行 32 位 release 编译
-          cargo build --release --target i686-unknown-linux-gnu
+        WORKDIR /workspace
+        COPY . .
+
+        RUN cargo build --release
+        EOF
+
+        # 启动原生的 i386 CentOS 7 容器直接编译
+        docker run --rm --platform linux/32bit/i386 -v ${{ github.workspace }}:/workspace centos:7 bash -c "
+          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo && \
+          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo && \
+          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo && \
+          yum install -y gcc make git curl glibc-devel && \
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+          source \$HOME/.cargo/env && \
+          cargo build --release
         "
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: libdofslim-i686-centos7
-        path: target/i686-unknown-linux-gnu/release/libdofslim.so
+        path: target/release/libdofslim.so
